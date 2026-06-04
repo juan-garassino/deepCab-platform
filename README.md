@@ -1,66 +1,159 @@
-# NY Taxi Fare prediction interface
+# deepCab-platform
 
-![](images/snapshot.png)
+GCP infrastructure-as-code for the deepCab learning project. Real Terraform, real CI,
+multi-env (dev / staging / prod). Sibling repo to [`deepCab`](https://github.com/juan-garassino/deepCab)
+(the API). The split:
 
-## Setup
+| Repo | Owns |
+|---|---|
+| `deepCab` | source code + Dockerfile + image build + `gcloud run services update --image=...` |
+| `deepCab-platform` *(this repo)* | every GCP resource — service shape, IAM, networking, storage, secrets, scheduler, … |
 
-The interface uses 3 APIs:
+The static landing page (`index.html`, `CNAME`, `images/`, `script.js`, `style.css`)
+is also published from this repo via GitHub Pages, but it is **not** the focus.
+Platform content lives under `terraform/`, `cloud-manifests/`, `docs/`, `.github/`.
 
-- The NY Taxi Fare prediction API
-- The [MapBox Maps API](https://docs.mapbox.com/mapbox-gl-js/api/) to display a map and address autocomplete
-- The [MapBox Directions API](https://docs.mapbox.com/api/navigation/) to display the route on the map
+---
 
-These APIs require credentials and the following steps will guide you to get them and set the interface with.
+## What's here
 
-### NY Taxi Fare prediction API
-
-Update the `script.js` to get prediction from your own API hosted on GCP (make sure to use `https`, not `http`):
-
-```js
-// script.js
-
-const taxiFareApiUrl = 'https://YOUR_API_URL/predict';
+```
+.
+├── index.html, CNAME, images/, script.js, style.css   # GitHub Pages landing
+│
+├── terraform/                  # Layered Terraform (modules + per-env composition)
+│   ├── modules/                #   12 reusable modules
+│   ├── envs/{dev,staging,prod} #   per-env wiring + tfvars
+│   └── README.md
+│
+├── cloud-manifests/            # Legacy YAML preserved for reference / diff
+│   ├── cloud-run/
+│   ├── cloud-run-jobs/
+│   ├── scheduler/
+│   ├── gke/
+│   └── workload-identity/
+│
+├── .github/workflows/
+│   ├── platform-plan.yml       # PR → `terraform plan` per env → PR comment
+│   └── platform-apply.yml      # main → apply dev → staging → prod (gated)
+│
+├── docs/
+│   ├── ARCHITECTURE.md         # diagrams, cross-repo split, data flow
+│   ├── ENVIRONMENTS.md         # per-env table (sizes, URLs, who can deploy)
+│   ├── COSTS.md                # monthly cost back-of-napkin per env
+│   └── RUNBOOK.md              # bootstrap a new env end-to-end
+│
+└── Makefile                    # env-scoped wrappers (plan / apply / fmt / validate / lint)
 ```
 
-Hint: alternatively, you may use this Le Wagon Prediction API if you do not have one in production:
+## 5-minute quickstart
 
-`https://taxifare.lewagon.ai/predict`
+Prerequisites: `terraform` + `gcloud` installed; you own a GCP project and a billing account.
 
-_Note: the following setup steps are optional as you can use Mapbox credentials given by Le Wagon_
+```bash
+# 1. Clone the repo
+git clone https://github.com/juan-garassino/deepCab-platform.git
+cd deepCab-platform
 
-### MapBox Maps and Directions APIs (optional)
+# 2. Local sanity (no GCP access needed)
+make fmt              # terraform fmt -recursive
+make validate         # init -backend=false + validate, per env
 
-- Go to [MapBox](https://www.mapbox.com/) and create an account
-- Go to your [Account](https://account.mapbox.com/) and grab your `Access Token` then set it into the `script.js`
+# 3. Bootstrap your first env (full walkthrough in docs/RUNBOOK.md)
+ENV=dev
+gcloud projects create deepcab-${ENV}                                # one-time
+gcloud storage buckets create gs://deepcab-tfstate-${ENV}            # one-time, chicken-and-egg
+./cloud-manifests/workload-identity/bootstrap.sh                     # one-time WIF bootstrap
 
-```js
-//...
-mapboxgl.accessToken = 'YOUR_MAPBOX_API_ACCESS_TOKEN';
-````
+# Edit terraform/envs/${ENV}/terraform.tfvars — fill in project_id + project_number
+make ENV=${ENV} plan
+make ENV=${ENV} apply
+
+# 4. Populate secrets (TF declares containers, NOT values)
+echo -n "https://hooks.slack.com/..." | gcloud secrets versions add slack-webhook-url --data-file=-
+echo -n "sk-..."                       | gcloud secrets versions add openai-api-key   --data-file=-
+
+# 5. Trigger the first image build from 001-deepCab-api (tag a release)
+
+# 6. Hit it
+URL=$(make ENV=${ENV} -s output | grep api_service_url | awk -F\" '{print $2}')
+curl -fsS ${URL}/healthz
+```
+
+## Layered Terraform — how it composes
+
+```
+envs/dev/main.tf   ──┐
+envs/staging/.../   ─┼──>   modules/{gar,storage,wif,secret_manager,cloud_sql,
+envs/prod/.../     ──┘                vpc,cloud_run,cloud_run_job,scheduler,
+                                      gke,dns,iam}
+```
+
+Each `envs/<env>/` composes the same set of modules with env-specific knobs.
+There is no DRY tax — repetition makes diffs obvious during code review.
+
+See `terraform/README.md` for the module reference table and `docs/ARCHITECTURE.md`
+for the dependency graph.
+
+## How the cross-repo split works
+
+```
+┌──────────────────────────┐
+│ deepCab (001) — API repo │
+│                          │
+│  push v0.1.0 tag         │
+│       │                  │
+│       ▼                  │
+│  docker build + push     │   ┌────────────────────────────────────┐
+│  to GAR                  │   │ deepCab-platform (002) — THIS REPO │
+│       │                  │   │                                    │
+│       ▼                  │   │  TF defines the Cloud Run service  │
+│  gcloud run services     │   │  spec (CPU/mem/scale/env/IAM)      │
+│  update --image=…        │◀──┤  TF defines the GAR repo, IAM, ... │
+│       │                  │   │                                    │
+│       ▼                  │   │  Image updates from 001 do NOT     │
+│  service rolls forward   │   │  trigger TF drift                  │
+└──────────────────────────┘   │  (`lifecycle.ignore_changes`)      │
+                               └────────────────────────────────────┘
+```
+
+Concretely: `terraform/modules/cloud_run/main.tf` has
+
+```hcl
+lifecycle {
+  ignore_changes = [
+    template[0].containers[0].image,
+    client,
+    client_version,
+  ]
+}
+```
+
+so TF owns the spec and 001 owns the image, with no fight.
+
+## CI workflows
+
+| Workflow | Trigger | Effect |
+|---|---|---|
+| `platform-plan.yml` | PR touching `terraform/**` | Matrix over [dev, staging, prod] — `terraform plan` → PR comment |
+| `platform-apply.yml` | push to `main` touching `terraform/**` (or manual) | Sequential apply dev → staging → prod with `environment:` approval gates + Slack notify |
+
+Both auth via Workload Identity Federation (zero JSON keys).
 
 ## Local development
 
-To check your setup, run the interface locally with:
-```bash
-python -m http.server 5001
-```
+The Terraform tree assumes you have `terraform >= 1.5` and a Google Cloud SDK
+authenticated as a project owner. For everything else (running the API,
+docker-compose, MLflow locally) you want the **001 repo**, not this one.
 
-Then go to [http://localhost:5001](http://localhost:5001)
+## Pointers
 
-## Deploy on GitHub Pages
+- `docs/RUNBOOK.md` — bootstrap a new env, rotate secrets, recover from drift
+- `docs/ARCHITECTURE.md` — diagrams + dependency graph + data flow
+- `docs/ENVIRONMENTS.md` — per-env table (sizes, URLs, deploy permissions)
+- `docs/COSTS.md` — back-of-napkin monthly cost estimates
+- `terraform/README.md` — module reference
 
-Your app is ready to go live!
+## License
 
-Create a new branch `gh-pages`:
-
-```bash
-git checkout -b gh-pages
-```
-
-Deploy your app on GitHub:
-
-```bash
-git push origin gh-pages
-```
-
-Your app will be visible shortly at `https://YOUR_GITHUB_NICKNAME.github.io/taxi-fare-interface`.
+Same as the parent project: MIT (or as specified in the API repo).

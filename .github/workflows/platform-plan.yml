@@ -1,0 +1,123 @@
+name: platform-plan
+
+# Runs `terraform plan` per env on every PR that touches terraform/**.
+# The plan output is posted as a PR comment so reviewers see the impact
+# without leaving GitHub.
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/platform-plan.yml"
+
+  # Manual fallback for ad-hoc plans.
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment to plan against"
+        type: choice
+        required: true
+        default: "dev"
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: platform-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: plan (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - dev
+          - staging
+          - prod
+
+    env:
+      TF_VERSION: "1.7.5"
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+      WORKDIR: terraform/envs/${{ matrix.env }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip if dispatch and not matching env
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.env != matrix.env
+        run: |
+          echo "Dispatch requested env=${{ github.event.inputs.env }} — skipping ${{ matrix.env }}."
+          exit 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Authenticate to GCP via WIF
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Set these in repo Settings -> Secrets and variables -> Actions:
+          #   vars.GCP_WIF_PROVIDER_<ENV>  = projects/<n>/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          #   vars.GCP_TERRAFORM_SA_<ENV>  = deepcab-terraform@<project>.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars[format('GCP_WIF_PROVIDER_{0}', matrix.env)] }}
+          service_account: ${{ vars[format('GCP_TERRAFORM_SA_{0}', matrix.env)] }}
+
+      - name: terraform fmt -check
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform fmt -check -recursive ../..
+
+      - name: terraform init
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform init -input=false -no-color
+
+      - name: terraform validate
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform validate -no-color
+
+      - name: terraform plan
+        id: plan
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          set +e
+          terraform plan -input=false -no-color -lock-timeout=2m -out=tfplan > plan.txt 2>&1
+          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+          # Trim long plans so PR comments stay under 65kB.
+          head -c 50000 plan.txt > plan.trimmed.txt
+          cat plan.trimmed.txt
+
+      - name: Post plan as PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('${{ env.WORKDIR }}/plan.trimmed.txt', 'utf8');
+            const env = '${{ matrix.env }}';
+            const exitcode = '${{ steps.plan.outputs.exitcode }}';
+            const status = exitcode === '0' ? 'OK' : 'ERROR';
+            const body = `### Terraform Plan — \`${env}\` (${status})\n\n<details><summary>show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n\n</details>`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Fail job if plan errored
+        if: steps.plan.outputs.exitcode != '0'
+        run: |
+          echo "::error::terraform plan exited with code ${{ steps.plan.outputs.exitcode }} for ${{ matrix.env }}"
+          exit 1

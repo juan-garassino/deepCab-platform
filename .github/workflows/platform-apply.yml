@@ -1,0 +1,190 @@
+name: platform-apply
+
+# Runs `terraform apply` sequentially across dev -> staging -> prod.
+# - Triggered on push to main when terraform/** changed, OR via workflow_dispatch.
+# - staging and prod require an `environment:` approval (configure in repo settings).
+# - Notifies Slack on success/failure (set SLACK_WEBHOOK_URL repo secret).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+      - ".github/workflows/platform-apply.yml"
+
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Which env to apply (all = dev->staging->prod)"
+        type: choice
+        default: "all"
+        options:
+          - all
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: platform-apply
+  cancel-in-progress: false
+
+jobs:
+  apply-dev:
+    if: ${{ github.event_name == 'push' || github.event.inputs.env == 'all' || github.event.inputs.env == 'dev' }}
+    name: apply (dev)
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      TF_VERSION: "1.7.5"
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+      WORKDIR: terraform/envs/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_DEV }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA_DEV }}
+
+      - name: terraform init
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform init -input=false -no-color
+
+      - name: terraform apply
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform apply -input=false -no-color -auto-approve -lock-timeout=5m
+
+      - name: Slack notify (success)
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":white_check_mark: deepCab platform applied to *dev* (${GITHUB_SHA::7})\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Slack notify (failure)
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":x: deepCab platform apply *FAILED* on dev (${GITHUB_SHA::7}). Check the run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+  apply-staging:
+    if: ${{ github.event_name == 'push' || github.event.inputs.env == 'all' || github.event.inputs.env == 'staging' }}
+    needs: apply-dev
+    name: apply (staging)
+    runs-on: ubuntu-latest
+    # The `staging` environment must be configured in repo settings with
+    # "Required reviewers" — that's the manual approval gate.
+    environment: staging
+    env:
+      TF_VERSION: "1.7.5"
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+      WORKDIR: terraform/envs/staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_STAGING }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA_STAGING }}
+
+      - name: terraform init
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform init -input=false -no-color
+
+      - name: terraform apply
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform apply -input=false -no-color -auto-approve -lock-timeout=5m
+
+      - name: Slack notify (success)
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":white_check_mark: deepCab platform applied to *staging* (${GITHUB_SHA::7})\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Slack notify (failure)
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":x: deepCab platform apply *FAILED* on staging (${GITHUB_SHA::7}). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+  apply-prod:
+    if: ${{ github.event_name == 'push' || github.event.inputs.env == 'all' || github.event.inputs.env == 'prod' }}
+    needs: apply-staging
+    name: apply (prod)
+    runs-on: ubuntu-latest
+    # The `prod` environment must be configured with "Required reviewers" + wait timer.
+    environment: prod
+    env:
+      TF_VERSION: "1.7.5"
+      TF_IN_AUTOMATION: "1"
+      TF_INPUT: "0"
+      WORKDIR: terraform/envs/prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER_PROD }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA_PROD }}
+
+      - name: terraform init
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform init -input=false -no-color
+
+      - name: terraform apply
+        working-directory: ${{ env.WORKDIR }}
+        run: terraform apply -input=false -no-color -auto-approve -lock-timeout=5m
+
+      - name: Slack notify (success)
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":rocket: deepCab platform applied to *prod* (${GITHUB_SHA::7})\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Slack notify (failure)
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":rotating_light: deepCab platform apply *FAILED* on prod (${GITHUB_SHA::7}). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}" \
+            "$SLACK_WEBHOOK_URL"
