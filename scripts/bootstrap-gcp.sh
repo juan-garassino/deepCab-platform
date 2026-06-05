@@ -146,6 +146,12 @@ WIF_PROVIDER="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/
 if ! gcloud iam service-accounts describe "$TF_SA_EMAIL" --project="$PROJECT_ID" &>/dev/null; then
   gcloud iam service-accounts create "$TF_SA" \
     --project="$PROJECT_ID" --display-name="deepCab platform terraform CI"
+  # IAM is eventually consistent — wait for the SA to be visible before binding.
+  for i in 1 2 3 4 5 6; do
+    if gcloud iam service-accounts describe "$TF_SA_EMAIL" --project="$PROJECT_ID" &>/dev/null; then break; fi
+    echo "    waiting for IAM propagation ($i/6)..."
+    sleep 5
+  done
 else
   echo "    sa $TF_SA already exists — skipping create"
 fi

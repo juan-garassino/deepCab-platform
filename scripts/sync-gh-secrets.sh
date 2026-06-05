@@ -62,9 +62,13 @@ for repo in "${REPOS[@]}"; do
     gh variable set --repo "$repo" -f "$extra"
   fi
 
-  # 3. Shared secrets
-  echo "  secrets       <- $SHARED_SECRETS"
-  gh secret set --repo "$repo" -f "$SHARED_SECRETS"
+  # 3. Shared secrets — only upload if file has any non-empty KEY=VALUE lines
+  if grep -qE '^[A-Z_]+=.+$' "$SHARED_SECRETS"; then
+    echo "  secrets       <- $SHARED_SECRETS"
+    gh secret set --repo "$repo" -f "$SHARED_SECRETS"
+  else
+    echo "  secrets       (skipped — all values empty in $SHARED_SECRETS)"
+  fi
 done
 
 echo

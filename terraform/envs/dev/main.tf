@@ -110,7 +110,7 @@ module "cloud_run" {
   env_vars = {
     APP_ENV             = "dev"
     PORT                = "8000"
-    MLFLOW_TRACKING_URI = var.mlflow_tracking_uri
+    MLFLOW_TRACKING_URI = module.cloud_run_mlflow.service_url
     MODEL_TARGET        = "gcs"
     GCP_PROJECT         = var.project_id
     REGISTRY_GCS_BUCKET = module.storage.models_bucket
@@ -128,6 +128,45 @@ module "cloud_run" {
   depends_on = [
     module.secrets,
     module.gar,
+    module.cloud_run_mlflow,
+  ]
+}
+
+# Auto-populate the mlflow-db-password secret with the TF-generated password.
+# Other secrets (openai-api-key, deepcab-api-key, slack-webhook-url) are
+# user-supplied — push values manually after apply via `gcloud secrets versions add`.
+resource "google_secret_manager_secret_version" "mlflow_db_password" {
+  secret      = "projects/${var.project_id}/secrets/mlflow-db-password"
+  secret_data = module.cloud_sql.user_passwords["mlflow"]
+
+  depends_on = [
+    module.secrets,
+    module.cloud_sql,
+  ]
+}
+
+# 7a. Cloud Run service — MLflow tracking server (uses Cloud SQL + GCS)
+module "cloud_run_mlflow" {
+  source     = "../../modules/cloud_run_mlflow"
+  project_id = var.project_id
+  region     = var.region
+  env        = local.env
+
+  service_account_email = module.wif.runtime_sa_email
+  cloudsql_instance     = module.cloud_sql.connection_name
+  artifacts_bucket      = module.storage.mlflow_artifacts_bucket
+
+  cpu           = "1"
+  memory        = "1Gi"
+  min_instances = 0
+  max_instances = 2
+
+  labels = local.common_labels
+
+  depends_on = [
+    module.cloud_sql,
+    module.secrets,
+    module.storage,
   ]
 }
 
@@ -177,7 +216,7 @@ module "cloud_run_job" {
 
   env_vars = {
     APP_ENV             = "dev"
-    MLFLOW_TRACKING_URI = var.mlflow_tracking_uri
+    MLFLOW_TRACKING_URI = module.cloud_run_mlflow.service_url
     MODEL_TARGET        = "gcs"
     GCP_PROJECT         = var.project_id
     REGISTRY_GCS_BUCKET = module.storage.models_bucket
@@ -189,7 +228,7 @@ module "cloud_run_job" {
 
   labels = local.common_labels
 
-  depends_on = [module.secrets]
+  depends_on = [module.secrets, module.cloud_run_mlflow]
 }
 
 # 9. Cloud Scheduler (paused in dev — fires manually only)
