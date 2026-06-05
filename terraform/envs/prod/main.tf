@@ -103,12 +103,14 @@ module "cloud_sql" {
   depends_on = [module.vpc]
 }
 
-module "cloud_run" {
-  source     = "../../modules/cloud_run"
+module "cloud_run_api" {
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-api"
+  component             = "cloud-run-api"
   image                 = var.api_image
   service_account_email = module.wif.runtime_sa_email
 
@@ -118,9 +120,20 @@ module "cloud_run" {
   max_instances         = 10
   container_concurrency = 80
   timeout_seconds       = 60
+  container_port        = 8000
   allow_unauthenticated = true
 
-  cloudsql_instances = [module.cloud_sql.connection_name]
+  volumes = [
+    {
+      name                = "cloudsql"
+      type                = "cloud_sql"
+      cloud_sql_instances = [module.cloud_sql.connection_name]
+    },
+  ]
+
+  volume_mounts = [
+    { name = "cloudsql", mount_path = "/cloudsql" },
+  ]
 
   env_vars = {
     APP_ENV             = "prod"
@@ -143,12 +156,24 @@ module "cloud_run" {
   depends_on = [module.secrets, module.gar]
 }
 
+moved {
+  from = module.cloud_run.google_cloud_run_v2_service.this
+  to   = module.cloud_run_api.google_cloud_run_v2_service.this
+}
+
+moved {
+  from = module.cloud_run.google_cloud_run_v2_service_iam_member.public
+  to   = module.cloud_run_api.google_cloud_run_v2_service_iam_member.public
+}
+
 module "cloud_run_website" {
-  source     = "../../modules/cloud_run_website"
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-website"
+  component             = "cloud-run-website"
   image                 = var.website_image
   service_account_email = module.wif.runtime_sa_email
 
@@ -157,7 +182,15 @@ module "cloud_run_website" {
   min_instances         = 2
   max_instances         = 10
   container_concurrency = 200
+  timeout_seconds       = 30
+  container_port        = 80
   allow_unauthenticated = true
+
+  startup_probe_path                  = "/"
+  liveness_probe_path                 = "/"
+  startup_probe_initial_delay_seconds = 1
+  startup_probe_failure_threshold     = 10
+  liveness_probe_period_seconds       = 30
 
   labels = local.common_labels
 
