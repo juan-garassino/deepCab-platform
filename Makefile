@@ -64,6 +64,11 @@ workflows_lint:  ## Sanity-check YAML in .github/workflows/.
 
 lint: fmt_check validate workflows_lint  ## All checks (fmt + validate + workflows).
 
+# --- GCP project bootstrap -------------------------------------------------
+
+bootstrap_gcp:  ## One-shot: create GCP project + link billing + state bucket + WIF SA. Needs BILLING_ACCOUNT env.
+	./scripts/bootstrap-gcp.sh
+
 # --- GitHub secrets / variables --------------------------------------------
 
 sync_gh:  ## Upload gh-vars + gh-secrets dotenv files to all 3 deepCab repos.
