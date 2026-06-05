@@ -95,13 +95,13 @@ manual: create gs://deepcab-tfstate-${env}   (chicken-and-egg)
     ↓
 terraform init -backend=gcs
     ↓
-terraform apply  (provisions: wif → gar → storage → secrets → vpc → cloud_sql → cloud_run + cloud_run_job → scheduler)
+terraform apply  (provisions: wif → gar → storage → secrets → vpc → cloud_sql → cloud_run + cloud_run_website + cloud_run_job → scheduler)
     ↓
 manual: populate secrets via `gcloud secrets versions add …`
     ↓
-manual: push first v0.1.0 tag in 001 → image lands in GAR
+manual: push first v0.1.0 tag in 001 → api image lands in GAR; push first v0.1.0 tag in 003 → website image lands in GAR
     ↓
-terraform apply (Cloud Run picks up real image; idempotent re-run)
+terraform apply (Cloud Run services pick up real images; idempotent re-run)
     ↓
-manual: hit Cloud Run URL → done
+manual: hit Cloud Run URLs (api + website) → done
 ```

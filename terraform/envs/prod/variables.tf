@@ -28,12 +28,22 @@ variable "gh_platform_repo" {
   default = "deepCab-platform"
 }
 
+variable "gh_website_repo" {
+  type    = string
+  default = "deepCab-website"
+}
+
 variable "api_image" {
   type    = string
   default = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
 variable "retrain_image" {
+  type    = string
+  default = "us-docker.pkg.dev/cloudrun/container/hello"
+}
+
+variable "website_image" {
   type    = string
   default = "us-docker.pkg.dev/cloudrun/container/hello"
 }

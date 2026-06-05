@@ -64,6 +64,11 @@ workflows_lint:  ## Sanity-check YAML in .github/workflows/.
 
 lint: fmt_check validate workflows_lint  ## All checks (fmt + validate + workflows).
 
+# --- GitHub secrets / variables --------------------------------------------
+
+sync_gh:  ## Upload gh-vars + gh-secrets dotenv files to all 3 deepCab repos.
+	./scripts/sync-gh-secrets.sh
+
 # --- Housekeeping ----------------------------------------------------------
 
 clean:  ## Wipe local .terraform caches.

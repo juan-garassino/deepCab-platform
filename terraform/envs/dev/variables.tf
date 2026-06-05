@@ -32,6 +32,12 @@ variable "gh_platform_repo" {
   default     = "deepCab-platform"
 }
 
+variable "gh_website_repo" {
+  description = "Name of the website repo (003), allowed to push images + image-only Cloud Run updates."
+  type        = string
+  default     = "deepCab-website"
+}
+
 variable "api_image" {
   description = "Initial API container image. Default = bootstrap placeholder; first real image lands after 001 CI runs."
   type        = string
@@ -40,6 +46,12 @@ variable "api_image" {
 
 variable "retrain_image" {
   description = "Initial retrain container image."
+  type        = string
+  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+}
+
+variable "website_image" {
+  description = "Initial website (static SPA) container image. Real image lands after 003 CI runs."
   type        = string
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }

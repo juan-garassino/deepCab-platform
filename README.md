@@ -22,7 +22,7 @@ Platform content lives under `terraform/`, `cloud-manifests/`, `docs/`, `.github
 ├── index.html, CNAME, images/, script.js, style.css   # GitHub Pages landing
 │
 ├── terraform/                  # Layered Terraform (modules + per-env composition)
-│   ├── modules/                #   12 reusable modules
+│   ├── modules/                #   13 reusable modules
 │   ├── envs/{dev,staging,prod} #   per-env wiring + tfvars
 │   └── README.md
 │
@@ -85,8 +85,8 @@ curl -fsS ${URL}/healthz
 ```
 envs/dev/main.tf   ──┐
 envs/staging/.../   ─┼──>   modules/{gar,storage,wif,secret_manager,cloud_sql,
-envs/prod/.../     ──┘                vpc,cloud_run,cloud_run_job,scheduler,
-                                      gke,dns,iam}
+envs/prod/.../     ──┘                vpc,cloud_run,cloud_run_website,cloud_run_job,
+                                      scheduler,gke,dns,iam}
 ```
 
 Each `envs/<env>/` composes the same set of modules with env-specific knobs.

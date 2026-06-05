@@ -175,6 +175,13 @@ resource "google_service_account_iam_member" "gh_platform_to_terraform" {
   member             = "principalSet://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/${var.gh_owner}/${var.platform_gh_repo}"
 }
 
+# 003-deepCab-website repo can impersonate the deployer SA (image build + image-only Cloud Run swap).
+resource "google_service_account_iam_member" "gh_website_to_deployer" {
+  service_account_id = google_service_account.deployer.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/${var.gh_owner}/${var.website_gh_repo}"
+}
+
 # ----------------------------------------------------------------------------
 # Cross-SA impersonation
 # ----------------------------------------------------------------------------

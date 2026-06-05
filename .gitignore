@@ -21,3 +21,10 @@
 .DS_Store
 .vscode/
 .idea/
+
+# Filled-in secret/var files for scripts/sync-gh-secrets.sh (only .example is tracked)
+scripts/gh-vars.env
+scripts/gh-vars.api.env
+scripts/gh-vars.website.env
+scripts/gh-vars.platform.env
+scripts/gh-secrets.env

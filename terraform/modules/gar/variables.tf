@@ -17,7 +17,7 @@ variable "repo_id" {
 variable "description" {
   description = "Free-form description shown in the GCP console."
   type        = string
-  default     = "deepCab container images (api, retrain job, prefect worker)"
+  default     = "deepCab container images (api, retrain job, website)"
 }
 
 variable "labels" {

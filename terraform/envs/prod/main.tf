@@ -38,6 +38,7 @@ module "wif" {
   gh_owner         = var.gh_owner
   gh_repo          = var.gh_api_repo
   platform_gh_repo = var.gh_platform_repo
+  website_gh_repo  = var.gh_website_repo
 
   # Prod: tighten the deployer/terraform roles. No `roles/editor`.
   deployer_project_roles = [
@@ -142,6 +143,27 @@ module "cloud_run" {
   depends_on = [module.secrets, module.gar]
 }
 
+module "cloud_run_website" {
+  source     = "../../modules/cloud_run_website"
+  project_id = var.project_id
+  region     = var.region
+  env        = local.env
+
+  image                 = var.website_image
+  service_account_email = module.wif.runtime_sa_email
+
+  cpu                   = "1"
+  memory                = "512Mi"
+  min_instances         = 2
+  max_instances         = 10
+  container_concurrency = 200
+  allow_unauthenticated = true
+
+  labels = local.common_labels
+
+  depends_on = [module.gar]
+}
+
 module "cloud_run_job" {
   source     = "../../modules/cloud_run_job"
   project_id = var.project_id
@@ -210,6 +232,11 @@ module "dns" {
       rrdatas = ["ghs.googlehosted.com."]
     }
     "mlflow" = {
+      type    = "CNAME"
+      ttl     = 300
+      rrdatas = ["ghs.googlehosted.com."]
+    }
+    "app" = {
       type    = "CNAME"
       ttl     = 300
       rrdatas = ["ghs.googlehosted.com."]

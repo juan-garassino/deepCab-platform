@@ -44,6 +44,7 @@ module "wif" {
   gh_owner         = var.gh_owner
   gh_repo          = var.gh_api_repo
   platform_gh_repo = var.gh_platform_repo
+  website_gh_repo  = var.gh_website_repo
 
   labels = local.common_labels
 }
@@ -128,6 +129,28 @@ module "cloud_run" {
     module.secrets,
     module.gar,
   ]
+}
+
+# 7b. Cloud Run service — static SPA (Vite+React+nginx)
+module "cloud_run_website" {
+  source     = "../../modules/cloud_run_website"
+  project_id = var.project_id
+  region     = var.region
+  env        = local.env
+
+  image                 = var.website_image
+  service_account_email = module.wif.runtime_sa_email
+
+  cpu                   = "1"
+  memory                = "256Mi"
+  min_instances         = 0
+  max_instances         = 2
+  container_concurrency = 200
+  allow_unauthenticated = true
+
+  labels = local.common_labels
+
+  depends_on = [module.gar]
 }
 
 # 8. Cloud Run Job (retrain)

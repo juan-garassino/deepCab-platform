@@ -24,6 +24,12 @@ variable "platform_gh_repo" {
   default     = "deepCab-platform"
 }
 
+variable "website_gh_repo" {
+  description = "GitHub repo name of the website repo (003), also allowed to impersonate the deployer SA for image builds + Cloud Run image swaps."
+  type        = string
+  default     = "deepCab-website"
+}
+
 variable "pool_id" {
   description = "Workload Identity Pool ID."
   type        = string
