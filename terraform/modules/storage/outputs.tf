@@ -22,3 +22,8 @@ output "tfstate_bucket" {
   description = "Name of the Terraform remote-state bucket."
   value       = google_storage_bucket.tfstate.name
 }
+
+output "status_state_bucket" {
+  description = "Name of the bucket gcsfuse-mounted into the Uptime Kuma container at /app/data."
+  value       = google_storage_bucket.status_state.name
+}

@@ -1,0 +1,24 @@
+# Cloud Build job that mirrors the upstream MLflow image from GitHub Container
+# Registry (ghcr.io) into our Artifact Registry. Cloud Run rejects ghcr.io
+# images directly, so we keep a copy in GAR.
+#
+# Run with:
+#   gcloud builds submit --config=cloud-manifests/mlflow/mirror.yaml --no-source
+#
+# Edit the version tag below + re-run when you bump MLflow.
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['pull', 'ghcr.io/mlflow/mlflow:v2.16.2']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'tag'
+      - 'ghcr.io/mlflow/mlflow:v2.16.2'
+      - 'us-central1-docker.pkg.dev/deepcab-dev/deepcab/mlflow:v2.16.2'
+
+images:
+  - 'us-central1-docker.pkg.dev/deepcab-dev/deepcab/mlflow:v2.16.2'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

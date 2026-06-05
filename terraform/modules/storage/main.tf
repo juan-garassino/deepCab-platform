@@ -74,6 +74,19 @@ resource "google_storage_bucket" "models" {
   }
 }
 
+resource "google_storage_bucket" "status_state" {
+  # SQLite + asset storage for the Uptime Kuma status page (gcsfuse-mounted
+  # at /app/data inside the cloud_run_status service). Small bucket; no
+  # versioning needed since the SQLite file rewrites in place.
+  name                        = "${var.name_prefix}-status-${var.env}"
+  project                     = var.project_id
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  force_destroy               = var.force_destroy
+  labels                      = local.bucket_labels
+}
+
 resource "google_storage_bucket" "tfstate" {
   # The state bucket is bootstrapped manually before `terraform init`;
   # this resource exists so it becomes part of state once imported, allowing

@@ -74,6 +74,32 @@ bootstrap_gcp:  ## One-shot: create GCP project + link billing + state bucket + 
 sync_gh:  ## Upload gh-vars + gh-secrets dotenv files to all 3 deepCab repos.
 	./scripts/sync-gh-secrets.sh
 
+# --- Showcase up/down toggle -----------------------------------------------
+# `showcase_up`  : flip Cloud SQL ALWAYS + Uptime Kuma min=1 (~$15/mo).
+# `showcase_down`: flip Cloud SQL NEVER  + Uptime Kuma min=0 (~$0/mo idle).
+# Apply targets the dev env. Pass ENV=staging / prod to scope elsewhere.
+
+showcase_up:  ## Bring the showcase stack live (~$15/mo until showcase_down).
+	@cd $(TF_DIR) && terraform apply -input=false -auto-approve -var='showcase_mode=true'
+	@echo
+	@echo "Live URLs:"
+	@cd $(TF_DIR) && terraform output -raw api_service_url   2>/dev/null && echo "  ← api"
+	@cd $(TF_DIR) && terraform output -raw website_service_url 2>/dev/null && echo "  ← website"
+	@cd $(TF_DIR) && terraform output -raw mlflow_service_url 2>/dev/null && echo "  ← mlflow"
+	@cd $(TF_DIR) && terraform output -raw status_page_url    2>/dev/null && echo "  ← status page (Uptime Kuma)"
+
+showcase_down:  ## Stop Cloud SQL + scale Uptime Kuma to zero. Idle cost ~$0.
+	@cd $(TF_DIR) && terraform apply -input=false -auto-approve -var='showcase_mode=false'
+	@echo
+	@echo "Stack down. Cloud SQL stopped, Uptime Kuma min=0."
+	@echo "Cloud Run services exist but scale to zero — no compute billed."
+	@echo "Bring back with: make showcase_up"
+
+# --- MLflow image lifecycle ------------------------------------------------
+
+mlflow_mirror:  ## Mirror ghcr.io/mlflow/mlflow → GAR via Cloud Build. Re-run after bumping the version in cloud-manifests/mlflow/mirror.yaml.
+	gcloud builds submit --config=cloud-manifests/mlflow/mirror.yaml --no-source --project=$$(cd $(TF_DIR) && terraform output -raw project_id)
+
 # --- Housekeeping ----------------------------------------------------------
 
 clean:  ## Wipe local .terraform caches.

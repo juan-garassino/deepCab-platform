@@ -68,14 +68,13 @@ resource "google_cloud_run_v2_service" "this" {
         startup_cpu_boost = true
       }
 
-      # MLflow upstream image entrypoint expects `mlflow server` args.
+      # ghcr.io/mlflow/mlflow ships without psycopg2. Install it on boot, then
+      # exec mlflow server. Same hack as local docker-compose; swap for a
+      # custom image baked from this base + `pip install psycopg2-binary` when
+      # cold-start time becomes a real cost.
+      command = ["bash", "-c"]
       args = [
-        "server",
-        "--host", "0.0.0.0",
-        "--port", "${var.container_port}",
-        "--backend-store-uri", "postgresql+psycopg2://${var.db_user}:$${DB_PASSWORD}@/${var.db_name}?host=/cloudsql/${var.cloudsql_instance}",
-        "--default-artifact-root", local.artifacts_uri,
-        "--serve-artifacts",
+        "pip install --no-cache-dir psycopg2-binary && exec mlflow server --host 0.0.0.0 --port ${var.container_port} --backend-store-uri 'postgresql+psycopg2://${var.db_user}:'$${DB_PASSWORD}'@/${var.db_name}?host=/cloudsql/${var.cloudsql_instance}' --default-artifact-root '${local.artifacts_uri}' --serve-artifacts"
       ]
 
       env {

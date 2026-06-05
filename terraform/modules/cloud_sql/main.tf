@@ -36,6 +36,7 @@ resource "google_sql_database_instance" "this" {
 
   settings {
     tier              = var.tier
+    activation_policy = var.activation_policy
     availability_type = var.env == "prod" ? "REGIONAL" : "ZONAL"
     disk_size         = var.disk_size_gb
     disk_autoresize   = true

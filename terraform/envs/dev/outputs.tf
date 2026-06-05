@@ -42,6 +42,21 @@ output "api_service_url" {
   value       = module.cloud_run.service_url
 }
 
+output "website_service_url" {
+  description = "Cloud Run URL of the deepcab-website SPA."
+  value       = module.cloud_run_website.service_url
+}
+
+output "mlflow_service_url" {
+  description = "Cloud Run URL of the deepcab-mlflow tracking server."
+  value       = module.cloud_run_mlflow.service_url
+}
+
+output "status_page_url" {
+  description = "Public Uptime Kuma status page."
+  value       = module.cloud_run_status.service_url
+}
+
 output "retrain_job_name" {
   value = module.cloud_run_job.job_name
 }

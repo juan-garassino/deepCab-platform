@@ -56,6 +56,17 @@ variable "website_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
+variable "showcase_mode" {
+  description = <<-EOT
+    Cost toggle for the dev environment.
+      false (default, ~$0/mo idle): Cloud SQL stopped, Uptime Kuma min=0.
+      true  (~$15/mo):              Cloud SQL ALWAYS, Uptime Kuma min=1.
+    Flip via `make showcase_up` / `make showcase_down`.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "mlflow_tracking_uri" {
   description = "URL of the MLflow tracking server reachable from Cloud Run."
   type        = string

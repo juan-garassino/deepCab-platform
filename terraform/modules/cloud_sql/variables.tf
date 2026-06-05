@@ -25,6 +25,16 @@ variable "tier" {
   default     = "db-f1-micro"
 }
 
+variable "activation_policy" {
+  description = "ALWAYS = running (billed per hour). NEVER = stopped (only storage billed, ~$1/mo). Flip via the showcase_mode var in envs/dev/main.tf."
+  type        = string
+  default     = "ALWAYS"
+  validation {
+    condition     = contains(["ALWAYS", "NEVER", "ON_DEMAND"], var.activation_policy)
+    error_message = "activation_policy must be ALWAYS, NEVER, or ON_DEMAND."
+  }
+}
+
 variable "database_version" {
   description = "Postgres version."
   type        = string
