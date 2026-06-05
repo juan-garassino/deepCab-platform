@@ -91,13 +91,15 @@ module "cloud_sql" {
   labels = local.common_labels
 }
 
-# 7. Cloud Run service — minimal scale
-module "cloud_run" {
-  source     = "../../modules/cloud_run"
+# 7. Cloud Run service — deepcab-api (minimal scale)
+module "cloud_run_api" {
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-api"
+  component             = "cloud-run-api"
   image                 = var.api_image
   service_account_email = module.wif.runtime_sa_email
 
@@ -106,6 +108,7 @@ module "cloud_run" {
   min_instances         = 0
   max_instances         = 2
   container_concurrency = 40
+  container_port        = 8000
   allow_unauthenticated = true
 
   env_vars = {
@@ -131,6 +134,16 @@ module "cloud_run" {
   ]
 }
 
+moved {
+  from = module.cloud_run.google_cloud_run_v2_service.this
+  to   = module.cloud_run_api.google_cloud_run_v2_service.this
+}
+
+moved {
+  from = module.cloud_run.google_cloud_run_v2_service_iam_member.public
+  to   = module.cloud_run_api.google_cloud_run_v2_service_iam_member.public
+}
+
 # Auto-populate the mlflow-db-password secret with the TF-generated password.
 # Other secrets (openai-api-key, deepcab-api-key, slack-webhook-url) are
 # user-supplied — push values manually after apply via `gcloud secrets versions add`.
@@ -148,21 +161,60 @@ resource "google_secret_manager_secret_version" "mlflow_db_password" {
 # Uses the GAR-mirrored MLflow image (ghcr.io is rejected by Cloud Run).
 # To refresh after a new MLflow release:
 #   gcloud builds submit --config=cloud-manifests/mlflow/mirror.yaml --no-source
+#
+# Quirk: ghcr.io/mlflow/mlflow ships without psycopg2. Install it on boot, then
+# exec mlflow server. Same hack as local docker-compose; swap for a custom
+# image baked from this base + `pip install psycopg2-binary` when cold-start
+# time becomes a real cost.
 module "cloud_run_mlflow" {
-  source     = "../../modules/cloud_run_mlflow"
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-mlflow"
+  component             = "cloud-run-mlflow"
+  image                 = "us-central1-docker.pkg.dev/deepcab-dev/deepcab/mlflow:v2.16.2"
   service_account_email = module.wif.runtime_sa_email
-  cloudsql_instance     = module.cloud_sql.connection_name
-  artifacts_bucket      = module.storage.mlflow_artifacts_bucket
 
-  image         = "us-central1-docker.pkg.dev/deepcab-dev/deepcab/mlflow:v2.16.2"
-  cpu           = "1"
-  memory        = "1Gi"
-  min_instances = 0
-  max_instances = 2
+  cpu                   = "1"
+  memory                = "1Gi"
+  min_instances         = 0
+  max_instances         = 2
+  container_concurrency = 40
+  container_port        = 5000
+
+  command = ["bash", "-c"]
+  args = [
+    "pip install --no-cache-dir psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri 'postgresql+psycopg2://mlflow:'$${DB_PASSWORD}'@/mlflow?host=/cloudsql/${module.cloud_sql.connection_name}' --default-artifact-root 'gs://${module.storage.mlflow_artifacts_bucket}/' --serve-artifacts"
+  ]
+
+  env_vars = {
+    MLFLOW_TRACKING_URI = "http://0.0.0.0:5000"
+  }
+
+  secret_env_vars = {
+    DB_PASSWORD = "mlflow-db-password"
+  }
+
+  volumes = [
+    {
+      name                = "cloudsql"
+      type                = "cloud_sql"
+      cloud_sql_instances = [module.cloud_sql.connection_name]
+    },
+  ]
+
+  volume_mounts = [
+    { name = "cloudsql", mount_path = "/cloudsql" },
+  ]
+
+  startup_probe_path             = "/"
+  liveness_probe_path            = "/"
+  startup_probe_period_seconds   = 3
+  startup_probe_timeout_seconds  = 3
+  liveness_probe_period_seconds  = 30
+  liveness_probe_timeout_seconds = 3
 
   labels = local.common_labels
 
@@ -186,17 +238,46 @@ resource "google_storage_bucket_iam_member" "mlflow_artifacts_admin" {
 }
 
 # 7c. Cloud Run service — Uptime Kuma status page (statuspage.io look).
+# Persistence: SQLite at /app/data/kuma.db on a gcsfuse-mounted bucket so
+# probe history survives revisions.
 module "cloud_run_status" {
-  source     = "../../modules/cloud_run_status"
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-status"
+  component             = "cloud-run-status"
+  image                 = "docker.io/louislam/uptime-kuma:1"
   service_account_email = module.wif.runtime_sa_email
-  state_bucket          = module.storage.status_state_bucket
 
-  min_instances = var.showcase_mode ? 1 : 0
-  max_instances = 1
+  cpu                   = "1"
+  memory                = "512Mi"
+  min_instances         = var.showcase_mode ? 1 : 0
+  max_instances         = 1
+  container_concurrency = 80
+  timeout_seconds       = 30
+  container_port        = 3001
+
+  volumes = [
+    {
+      name          = "kuma-data"
+      type          = "gcs"
+      gcs_bucket    = module.storage.status_state_bucket
+      gcs_read_only = false
+    },
+  ]
+
+  volume_mounts = [
+    { name = "kuma-data", mount_path = "/app/data" },
+  ]
+
+  startup_probe_path             = "/"
+  liveness_probe_path            = "/"
+  startup_probe_period_seconds   = 5
+  startup_probe_timeout_seconds  = 3
+  liveness_probe_period_seconds  = 60
+  liveness_probe_timeout_seconds = 5
 
   labels = local.common_labels
 
@@ -205,11 +286,13 @@ module "cloud_run_status" {
 
 # 7b. Cloud Run service — static SPA (Vite+React+nginx)
 module "cloud_run_website" {
-  source     = "../../modules/cloud_run_website"
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-website"
+  component             = "cloud-run-website"
   image                 = var.website_image
   service_account_email = module.wif.runtime_sa_email
 
@@ -218,7 +301,15 @@ module "cloud_run_website" {
   min_instances         = 0
   max_instances         = 2
   container_concurrency = 200
+  timeout_seconds       = 30
+  container_port        = 80
   allow_unauthenticated = true
+
+  startup_probe_path                  = "/"
+  liveness_probe_path                 = "/"
+  startup_probe_initial_delay_seconds = 1
+  startup_probe_failure_threshold     = 10
+  liveness_probe_period_seconds       = 30
 
   labels = local.common_labels
 

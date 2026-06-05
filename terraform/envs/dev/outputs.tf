@@ -39,7 +39,7 @@ output "runtime_sa_email" {
 
 output "api_service_url" {
   description = "Cloud Run URL of the deepcab-api service."
-  value       = module.cloud_run.service_url
+  value       = module.cloud_run_api.service_url
 }
 
 output "website_service_url" {

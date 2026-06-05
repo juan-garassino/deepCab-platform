@@ -22,8 +22,7 @@ terraform/
 | `cloud_sql` | Cloud SQL Postgres + databases + users | always-on |
 | `secret_manager` | Secret containers + accessor IAM | always-on |
 | `wif` | Workload Identity Pool + Provider + 4 SAs + bindings | always-on |
-| `cloud_run` | `deepcab-api` service (v2) | always-on |
-| `cloud_run_website` | `deepcab-website` service (v2) — nginx-served Vite SPA | always-on |
+| `cloud_run_service` | Generic `google_cloud_run_v2_service` — instantiated per service: api, website, mlflow, status | always-on |
 | `cloud_run_job` | `deepcab-retrain` job (v2) | always-on |
 | `scheduler` | Cloud Scheduler firing the job | always-on |
 | `vpc` | VPC + Cloud NAT + private services connection | gated (`enabled = false` in dev) |
