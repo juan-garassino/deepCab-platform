@@ -230,3 +230,58 @@ If the change should be preserved, copy it into the TF code instead.
 | `Error 409: artifact registry 'deepcab' already exists` | Previous bootstrap-script artifact | `terraform import module.gar.google_artifact_registry_repository.deepcab projects/.../locations/.../repositories/deepcab` |
 | Cloud Run revision stuck in `Provisioning` | Bad image | `gcloud run revisions list` + roll back |
 | `cloud-sql-proxy unauthorized` | Runtime SA missing `roles/cloudsql.client` | Already in `wif` defaults — re-apply if missing |
+
+---
+
+## 6. How to add a monitor to the status page
+
+The Uptime Kuma status page (`deepcab-status` Cloud Run service) is seeded
+declaratively from `cloud-manifests/kuma/monitors.yaml`. Adding or editing a
+monitor is a 2-step loop — no clicking around the Kuma UI.
+
+### 6.1 Edit the YAML
+
+```bash
+$EDITOR cloud-manifests/kuma/monitors.yaml
+```
+
+Add an entry to the `monitors:` list:
+
+```yaml
+- name: deepcab-grafana                       # unique, max 64 chars
+  type: http                                  # http | keyword | ping | port | dns
+  url: https://grafana.deepcab.io/api/health
+  interval_seconds: 60                        # 20-3600
+  retry_interval_seconds: 60
+  max_retries: 2                              # 0-10
+  accepted_status_codes: ["200-299"]
+  description: Grafana dashboard health endpoint.
+  tags: [observability]
+```
+
+The file is validated against `deepcab_platform.schemas.kuma.KumaSeedConfig`
+on every `kuma seed` call — extra keys, missing fields, or out-of-range
+values fail loudly before any HTTP call is made.
+
+### 6.2 Re-run the seeder
+
+```bash
+export KUMA_BASE_URL=$(uv run deepcab-platform tf output --env <env> | grep status_page_url | awk -F\" '{print $2}')
+export KUMA_ADMIN_PASSWORD=$(gcloud secrets versions access latest --secret=kuma-admin-password --project=deepcab-<env>)
+
+uv run deepcab-platform kuma seed          # or: make kuma_seed
+```
+
+Output reports `created=N skipped=M`. **Existing monitors with the same name
+are skipped** (idempotent — re-running is safe). To force-update an existing
+monitor, delete it from the Kuma UI first, then re-seed.
+
+### 6.3 Verify
+
+```bash
+uv run deepcab-platform kuma check --base-url $KUMA_BASE_URL
+# ✓ https://... responsive
+```
+
+Open the status page in a browser to see the new monitor in the list. The
+first probe runs within `interval_seconds` of creation.

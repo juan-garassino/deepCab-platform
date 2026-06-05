@@ -17,18 +17,23 @@ terraform/
 
 | Module | Resource(s) | Status |
 |---|---|---|
+| `_labels` | Shared `{env, managed, component}` label assembler (Wave 2 / S3) — no resources, pure HCL locals | helper (consumed by `storage`, `secret_manager`, ...) |
 | `gar` | Artifact Registry repo (with cleanup policies) | always-on |
 | `storage` | 3 GCS buckets (mlflow, models, tfstate) | always-on |
 | `cloud_sql` | Cloud SQL Postgres + databases + users | always-on |
 | `secret_manager` | Secret containers + accessor IAM | always-on |
 | `wif` | Workload Identity Pool + Provider + 4 SAs + bindings | always-on |
-| `cloud_run_service` | Generic `google_cloud_run_v2_service` — instantiated per service: api, website, mlflow, status | always-on |
+| `cloud_run_service` | Generic `google_cloud_run_v2_service` (Wave 2 / S1) — instantiated once per workload: api, website, mlflow, status. Replaces the former `cloud_run`, `cloud_run_website`, `cloud_run_mlflow`, `cloud_run_status` quartet. | always-on |
 | `cloud_run_job` | `deepcab-retrain` job (v2) | always-on |
 | `scheduler` | Cloud Scheduler firing the job | always-on |
 | `vpc` | VPC + Cloud NAT + private services connection | gated (`enabled = false` in dev) |
 | `gke` | GKE Standard cluster + node pool | gated (`enabled = false` default) |
 | `dns` | Managed zone records | gated (empty `zone_name` disables) |
 | `iam` | Cross-cutting bindings + billing budget | always-on (mostly no-ops without inputs) |
+
+Total: **13 modules** (12 resource-bearing + 1 `_labels` helper). All four
+former `cloud_run_*` flavours now share the single `cloud_run_service`
+module, each declared once per env in `envs/<env>/main.tf`.
 
 ## Envs
 
