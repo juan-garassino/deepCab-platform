@@ -9,9 +9,22 @@ Every other knob lives here.
 
 ```
 terraform/
-├── modules/      # reusable building blocks (provider versions pinned per module)
-└── envs/         # per-env composition (dev, staging, prod)
+├── modules/         # reusable building blocks (provider versions pinned per module)
+└── envs/
+    ├── _shared/     # env_config.tf — single source of truth for per-env values
+    │                #   (tiers, CIDRs, role lists, instance counts, paused flags)
+    ├── dev/         # composition: reads `module.env_config.cfg`, wires modules
+    ├── staging/
+    └── prod/
 ```
+
+Each env's `main.tf` is now a thin composition: it instantiates
+`module "env_config" { source = "../_shared"; env = local.env }` and threads
+`local.cfg.<module_key>.*` into each downstream module call. To change a
+per-env knob (Cloud SQL tier, scheduler paused, IAM role list, etc.) edit
+`envs/_shared/env_config.tf` — never the env `main.tf` files. Truly per-env
+operator-supplied values (project IDs, project numbers, DNS zone names,
+images) stay in `terraform.tfvars` / `variables.tf`.
 
 ## Modules
 
@@ -32,6 +45,10 @@ terraform/
 | `iam` | Cross-cutting bindings + billing budget | always-on (mostly no-ops without inputs) |
 
 ## Envs
+
+All per-env values below are sourced from `envs/_shared/env_config.tf`. Update
+that file (not the per-env `main.tf`) to change a tier, instance count, or
+role list.
 
 | Env | API (Cloud Run) | Website (Cloud Run) | Cloud SQL | VPC | DNS | GKE | Budget |
 |---|---|---|---|---|---|---|---|
