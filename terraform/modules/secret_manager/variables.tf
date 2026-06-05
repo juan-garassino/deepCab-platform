@@ -26,6 +26,7 @@ variable "secret_ids" {
     "openai-api-key",
     "deepcab-api-key",
     "mlflow-db-password",
+    "kuma-admin-password",
   ]
 }
 

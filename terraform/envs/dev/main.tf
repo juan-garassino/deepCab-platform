@@ -157,6 +157,21 @@ resource "google_secret_manager_secret_version" "mlflow_db_password" {
   ]
 }
 
+# Uptime Kuma admin password — auto-generated, stored in Secret Manager.
+# Read by `deepcab-platform kuma seed` to create the admin account on first
+# boot. To rotate: `gcloud secrets versions add kuma-admin-password --data-file=-`.
+resource "random_password" "kuma_admin" {
+  length  = 32
+  special = false
+}
+
+resource "google_secret_manager_secret_version" "kuma_admin_password" {
+  secret      = "projects/${var.project_id}/secrets/kuma-admin-password"
+  secret_data = random_password.kuma_admin.result
+
+  depends_on = [module.secrets]
+}
+
 # 7a. Cloud Run service — MLflow tracking server.
 # Uses the GAR-mirrored MLflow image (ghcr.io is rejected by Cloud Run).
 # To refresh after a new MLflow release:
