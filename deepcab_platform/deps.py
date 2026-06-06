@@ -15,6 +15,11 @@ from deepcab_platform.providers.gcloud import (
 )
 from deepcab_platform.providers.gh import DryRunGhProvider, GhProvider, RealGhProvider
 from deepcab_platform.providers.http import DryRunHttpProvider, HttpProvider, RealHttpProvider
+from deepcab_platform.providers.kuma import (
+    DryRunKumaApiProvider,
+    KumaApiProvider,
+    RealKumaApiProvider,
+)
 from deepcab_platform.providers.terraform import (
     DryRunTerraformProvider,
     RealTerraformProvider,
@@ -50,6 +55,11 @@ def get_http_provider(mode: ProviderMode = ProviderMode.REAL) -> HttpProvider:
     return DryRunHttpProvider() if mode == ProviderMode.DRY_RUN else RealHttpProvider()
 
 
+@lru_cache(maxsize=2)
+def get_kuma_api_provider(mode: ProviderMode = ProviderMode.REAL) -> KumaApiProvider:
+    return DryRunKumaApiProvider() if mode == ProviderMode.DRY_RUN else RealKumaApiProvider()
+
+
 def get_bootstrap_service(mode: ProviderMode = ProviderMode.REAL) -> BootstrapService:
     return BootstrapService(gcloud=get_gcloud_provider(mode))
 
@@ -71,7 +81,7 @@ def get_showcase_service(mode: ProviderMode = ProviderMode.REAL) -> ShowcaseServ
 
 
 def get_kuma_service(mode: ProviderMode = ProviderMode.REAL) -> KumaSeedService:
-    return KumaSeedService(http=get_http_provider(mode))
+    return KumaSeedService(kuma=get_kuma_api_provider(mode))
 
 
 def settings() -> PlatformSettings:
