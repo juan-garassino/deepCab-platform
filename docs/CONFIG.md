@@ -49,6 +49,27 @@ Pydantic-settings then picks `.env.<env>` and overlays per-prefix env vars on to
 - **Uptime Kuma version**: pinned in `cloud_run_status` TF module.
 - **gh repo names**: hardcoded as defaults (`deepCab`, `deepCab-platform`, `deepCab-website`) — overridable per env if you ever fork.
 
+## Rotating secrets
+
+Secret values aren't read from `.env.<env>` files — those only hold the
+*identifiers* (which Cloud Run service uses which Secret Manager secret).
+The values live in Secret Manager, populated either by Terraform
+(`mlflow-db-password`, `kuma-admin-password`) or manually after the first
+apply (`openai-api-key`, `deepcab-api-key`, `slack-webhook-url`).
+
+To rotate one in-place:
+
+```bash
+echo "$NEW_VALUE" | uv run deepcab-platform secrets rotate <secret-id> \
+  --from-stdin --project-id $(uv run deepcab-platform tf output --env dev | grep project_id | awk -F\" '{print $2}')
+```
+
+That command pushes a new version AND triggers a Cloud Run revision swap on
+every service that consumes the secret (the mapping is in
+`services/secrets.py::_default_consumers`). Without the revision swap, the
+running container keeps reading the old value — Cloud Run binds secret env
+vars at revision-creation time, not at request time.
+
 ## Things `DEEPCAB_ENV` does NOT replace
 
 - `APP_ENV` is the legacy name. It still works. Don't remove it from existing `.env` files.

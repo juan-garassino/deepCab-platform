@@ -22,9 +22,9 @@ Platform content lives under `terraform/`, `cloud-manifests/`, `docs/`, `.github
 ├── index.html, CNAME, images/, script.js, style.css   # GitHub Pages landing
 │
 ├── deepcab_platform/           # Python CLI (Wave 3) — mirrors 001's deepCab/{cli,services,providers,schemas}
-│   ├── cli/                    #   7 Typer subcommands (bootstrap, sync-gh, mlflow, showcase, kuma, tf, status)
-│   ├── services/               #   6 @dataclass services with provider DI
-│   ├── providers/              #   4 Protocols × {Real, DryRun} impls (gcloud, gh, terraform, http)
+│   ├── cli/                    #   8 Typer subcommands (bootstrap, sync-gh, mlflow, showcase, kuma, secrets, tf, status)
+│   ├── services/               #   7 @dataclass services with provider DI
+│   ├── providers/              #   5 Protocols × {Real, DryRun} impls (gcloud, gh, terraform, http, kuma) + shared _subprocess helper
 │   ├── schemas/                #   Pydantic models + str-Enums + pydantic-settings
 │   └── deps.py                 #   wires providers → services → cli
 │
@@ -89,8 +89,11 @@ uv run deepcab-platform sync-gh
 uv run deepcab-platform tf apply --env dev
 
 # 6. Populate secrets (TF declares containers, NOT values)
-echo -n "https://hooks.slack.com/..." | gcloud secrets versions add slack-webhook-url --data-file=-
-echo -n "sk-..."                       | gcloud secrets versions add openai-api-key   --data-file=-
+#    Use `secrets rotate` so the consuming Cloud Run services get a new
+#    revision automatically. Bare `gcloud secrets versions add` works too
+#    but you'd then have to bump every service by hand.
+echo "https://hooks.slack.com/..."  | uv run deepcab-platform secrets rotate slack-webhook-url --from-stdin --project-id deepcab-dev
+echo "sk-..."                        | uv run deepcab-platform secrets rotate openai-api-key   --from-stdin --project-id deepcab-dev
 
 # 7. Pre-seed the Uptime Kuma status page from cloud-manifests/kuma/monitors.yaml
 export KUMA_BASE_URL=$(uv run deepcab-platform tf output --env dev | grep status_page_url | awk -F\" '{print $2}')
@@ -100,8 +103,10 @@ uv run deepcab-platform kuma seed
 # 8. Trigger the first image build from 001-deepCab-api (tag a release)
 
 # 9. Hit it
+#    Note: /healthz is intercepted by Google Frontend on Cloud Run; use
+#    /readyz for external probes. /docs and / also reach the container.
 URL=$(uv run deepcab-platform tf output --env dev | grep api_service_url | awk -F\" '{print $2}')
-curl -fsS ${URL}/healthz
+curl -fsS ${URL}/readyz
 ```
 
 ## Layered Terraform — how it composes

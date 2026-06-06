@@ -32,6 +32,10 @@ make showcase_up / showcase_down     # → uv run deepcab-platform showcase up|d
 make kuma_seed                       # → uv run deepcab-platform kuma seed
 ```
 
+`secrets rotate` has no Makefile alias by design — it's interactive (reads
+the new value from stdin or an env var), so calling the CLI directly is
+cleaner.
+
 Every subcommand respects `DEEPCAB_ENV` (or legacy `APP_ENV`). See
 [`docs/CONFIG.md`](./CONFIG.md) for the full environment model.
 
@@ -190,6 +194,32 @@ without executing.
 Source: `deepcab_platform/cli/tf.py` → `services/terraform.py`.
 
 ---
+
+### `secrets rotate`
+
+Push a new version of a Secret Manager secret AND bump every Cloud Run
+service that consumes it. Cloud Run binds secret env vars at *revision
+creation* time, so adding a secret version alone doesn't update the
+running service — this command handles both halves.
+
+```bash
+# from stdin (so the value never lands in shell history or argv)
+echo "$NEW_OPENAI_KEY" | uv run deepcab-platform secrets rotate openai-api-key \
+  --from-stdin --project-id deepcab-dev
+
+# or from an env var
+uv run deepcab-platform secrets rotate openai-api-key \
+  --from-env OPENAI_API_KEY --project-id deepcab-dev
+
+# scope the consumers explicitly (default = the consumers map in services/secrets.py)
+uv run deepcab-platform secrets rotate slack-webhook-url \
+  --from-env SLACK_WEBHOOK --service deepcab-api --service deepcab-mlflow
+```
+
+Add `--dry-run` to see the gcloud calls without executing them.
+
+Source: `deepcab_platform/services/secrets.py` (`SecretsService.rotate`) +
+`deepcab_platform/cli/secrets.py`.
 
 ### `status`
 

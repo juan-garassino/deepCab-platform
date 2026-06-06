@@ -170,7 +170,9 @@ reverting that image change.
 
 ```bash
 URL=$(cd ../002-deepCab-platform/terraform/envs/${ENV} && terraform output -raw api_service_url)
-curl -fsS ${URL}/healthz
+# Note: /healthz is intercepted by Google Frontend on Cloud Run before reaching the container.
+# Use /readyz (or /version, /docs) for external smoke tests.
+curl -fsS ${URL}/readyz
 curl -fsS ${URL}/version
 ```
 
@@ -178,10 +180,24 @@ curl -fsS ${URL}/version
 
 ## 2. Secret rotation
 
+Use the CLI — it pushes the new version AND triggers a Cloud Run revision
+swap on every consuming service in one call:
+
+```bash
+echo "$NEW_VALUE" | uv run deepcab-platform secrets rotate openai-api-key \
+  --from-stdin --project-id deepcab-dev
+```
+
+The mapping of secret → consuming services lives in
+`deepcab_platform/services/secrets.py` (`_default_consumers`). Override per
+call with `--service deepcab-api`.
+
+Manual fallback (bypasses the consumer map):
+
 ```bash
 gcloud secrets versions add slack-webhook-url --data-file=- <<< "https://hooks.slack.com/NEW"
-# Cloud Run picks up the new value on next cold start. Force a restart:
-gcloud run services update deepcab-api --region=us-central1 --update-env-vars=ROTATE=$(date +%s)
+gcloud run services update deepcab-api --region=us-central1 \
+  --update-secrets=SLACK_WEBHOOK_URL=slack-webhook-url:latest
 ```
 
 For `mlflow-db-password` rotation: see step 1.7.
@@ -205,6 +221,44 @@ make ENV=<env> destroy
 
 The `tfstate` bucket has `force_destroy = false` and survives `terraform destroy`
 on purpose — delete it manually if you really mean it.
+
+### 3.1 Re-bootstrapping within 30 days (WIF soft-delete window)
+
+When you destroy + rebuild the same env quickly, the WIF pool + provider sit
+in GCP's `DELETED` state for 30 days. A naive create returns
+`ALREADY_EXISTS in DELETED state`. The bootstrap CLI handles this:
+`BootstrapService._ensure_wif_pool` and `_ensure_wif_provider` first probe
+`--show-deleted` and call `undelete` instead of `create` when the resource
+is soft-deleted. Same with `gcloud iam service-accounts undelete` if you
+ever destroy a SA you want back.
+
+If you're operating outside the CLI (e.g. clicking in console), the manual
+recovery is:
+
+```bash
+gcloud iam workload-identity-pools undelete github-pool \
+  --location=global --project=$PROJECT_ID
+gcloud iam workload-identity-pools providers undelete github-provider \
+  --workload-identity-pool=github-pool --location=global \
+  --project=$PROJECT_ID
+# then `terraform import` both back into state and re-apply.
+```
+
+### 3.2 The showcase up/down toggle (cheaper than destroy)
+
+If you just want the stack idle without losing data, use the showcase
+toggle instead of destroying. `showcase down` flips Cloud SQL to
+`activation_policy = NEVER` (storage-only cost, ~$1/mo for 10 GB) and
+scales Uptime Kuma to `min_instances = 0` ($0). Cloud Run services stay
+provisioned but cost nothing while idle. `showcase up` flips both back —
+`ShowcaseService` polls the Cloud SQL state until `RUNNABLE` so MLflow
+isn't 5xx-ing while Postgres warms up.
+
+```bash
+make showcase_down            # ~$1/mo idle, services preserved
+# … hours/days later …
+make showcase_up              # back to ~$15/mo, MLflow ready when this returns
+```
 
 ---
 
