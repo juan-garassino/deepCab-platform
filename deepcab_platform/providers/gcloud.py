@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
-import sys
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from rich import print as rprint
+
+from deepcab_platform.providers._subprocess import run_capture
 
 
 @runtime_checkable
@@ -34,26 +34,7 @@ class RealGcloudProvider:
             env.update(self.extra_env)
         # Default to system Python for the gcloud bundled-python protobuf bug
         env.setdefault("CLOUDSDK_PYTHON", "/usr/bin/python3")
-        result = subprocess.run(
-            [self.binary, *args],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        if result.returncode != 0:
-            if result.stdout:
-                sys.stdout.write(result.stdout)
-            if result.stderr:
-                sys.stderr.write(result.stderr)
-            if check:
-                raise subprocess.CalledProcessError(
-                    result.returncode,
-                    [self.binary, *args],
-                    output=result.stdout,
-                    stderr=result.stderr,
-                )
-        return result.stdout
+        return run_capture([self.binary, *args], check=check, env=env)
 
 
 @dataclass
