@@ -89,6 +89,8 @@ variable "runtime_project_roles" {
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
     "roles/cloudsql.client",
+    # train-on-vm: VM self-destructs at end of training run.
+    "roles/compute.instanceAdmin.v1",
   ]
 }
 

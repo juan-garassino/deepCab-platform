@@ -71,3 +71,33 @@ class ProviderMode(str, Enum):
 
     REAL = "real"
     DRY_RUN = "dry_run"
+
+
+class BackendKind(str, Enum):
+    """Subset of 001's BackendKind we wire as Hydra `backend=` overrides."""
+
+    TF_MLP = "tf_mlp"
+    TORCH_MLP = "torch_mlp"
+    XGB = "xgb"
+    LGBM = "lgbm"
+    CATBOOST = "catboost"
+    FT_TRANSFORMER = "ft_transformer"
+
+
+class DataSize(str, Enum):
+    """Subset of 001's DataSize. Passed as Hydra `data=` override."""
+
+    S1K = "1k"
+    S10K = "10k"
+    S100K = "100k"
+    S500K = "500k"
+    FULL = "full"
+
+
+class GpuType(str, Enum):
+    """GPU accelerators we support on training VMs (spot-priced where available)."""
+
+    NONE = "none"
+    T4 = "nvidia-tesla-t4"
+    L4 = "nvidia-l4"
+    A100 = "nvidia-tesla-a100"

@@ -339,3 +339,72 @@ uv run deepcab-platform kuma check --base-url $KUMA_BASE_URL
 
 Open the status page in a browser to see the new monitor in the list. The
 first probe runs within `interval_seconds` of creation.
+
+---
+
+## 7. Train on a GCE VM (one-shot)
+
+For CPU training under 24h, `gcloud run jobs execute deepcab-retrain` is
+strictly better — faster spin-up, no IAM to manage. The VM path exists for
+**GPU training** and **interactive SSH debugging** of training crashes.
+
+### 7.1 Launch
+
+```bash
+# Default: torch_mlp on a 100k slice with 1× T4 spot ≈ $0.14/hr ≈ $0.05/run
+uv run deepcab-platform train-on-vm --project-id deepcab-dev
+
+# CPU variant (Container-Optimized OS, e2-standard-4 spot)
+uv run deepcab-platform train-on-vm --gpu none --machine e2-standard-4 \
+  --project-id deepcab-dev
+
+# Keep the VM alive after training for SSH debugging
+uv run deepcab-platform train-on-vm --keep-alive --project-id deepcab-dev
+
+# Different backend + bigger slice
+uv run deepcab-platform train-on-vm --backend xgb --data 500k \
+  --machine n1-standard-8 --project-id deepcab-dev
+```
+
+What happens:
+1. Renders `cloud-manifests/train/startup.sh.tmpl` with your inputs.
+2. `gcloud compute instances create` with the script as metadata,
+   `--max-run-duration` as the belt-and-suspenders auto-destruct.
+3. VM pulls the `deepcab/api:<tag>` image from GAR.
+4. Runs `python -m deepCab.training.train backend=X data=Y` inside the
+   container with `REGISTRY_TARGET=gcs` so the model lands in
+   `gs://deepcab-models-<env>/runs/<run_id>/`.
+5. Logs the run to MLflow at the URL you set in `MLFLOW_URL`.
+6. Sends Telegram start/success/failure pings (no-op when
+   `TELEGRAM_BOT_TOKEN` is empty).
+7. Self-destructs when training is done (unless `--keep-alive`).
+
+### 7.2 Watch progress
+
+```bash
+# Serial console = boot + script stdout in real time
+gcloud compute instances get-serial-port-output \
+  deepcab-train-<backend>-<ts> --zone=us-central1-a --project=deepcab-dev
+
+# Or MLflow once the run is registered
+open https://deepcab-mlflow-vkj76snh3q-uc.a.run.app/#/experiments
+```
+
+### 7.3 Required IAM (handled by TF)
+
+The `deepcab-runtime` SA needs `roles/compute.instanceAdmin.v1` (project-
+level) so the VM can `gcloud compute instances delete` itself. This is in
+the `wif` module's `runtime_project_roles` default. After bumping the
+module, `make ENV=dev apply` to land the IAM binding before first use.
+
+### 7.4 Cost
+
+| Shape | Hourly (Iowa spot) | Typical 20-min run |
+| --- | --- | --- |
+| e2-standard-4 (CPU) | ~$0.05 | ~$0.02 |
+| n1-standard-4 + T4 | ~$0.14 | ~$0.05 |
+| n1-standard-8 + L4 | ~$0.32 | ~$0.11 |
+| n1-standard-8 + A100 | ~$1.10 | ~$0.37 |
+
+The `--spot` default can be preempted by GCP — fine for one-shot training,
+not for production-critical workloads. Add `--standard` to opt out.

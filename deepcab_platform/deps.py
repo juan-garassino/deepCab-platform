@@ -34,6 +34,7 @@ from deepcab_platform.services.secrets import SecretsService
 from deepcab_platform.services.showcase import ShowcaseService
 from deepcab_platform.services.sync_gh import SyncGhService
 from deepcab_platform.services.terraform import TerraformService
+from deepcab_platform.services.train import TrainOnVmService
 
 
 @lru_cache(maxsize=2)
@@ -90,6 +91,10 @@ def get_kuma_service(mode: ProviderMode = ProviderMode.REAL) -> KumaSeedService:
 
 def get_secrets_service(mode: ProviderMode = ProviderMode.REAL) -> SecretsService:
     return SecretsService(gcloud=get_gcloud_provider(mode))
+
+
+def get_train_service(mode: ProviderMode = ProviderMode.REAL) -> TrainOnVmService:
+    return TrainOnVmService(gcloud=get_gcloud_provider(mode))
 
 
 def settings() -> PlatformSettings:

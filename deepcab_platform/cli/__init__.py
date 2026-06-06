@@ -12,6 +12,7 @@ from deepcab_platform.cli.showcase import showcase_app
 from deepcab_platform.cli.status import status_cmd
 from deepcab_platform.cli.sync_gh import sync_gh_cmd
 from deepcab_platform.cli.tf import tf_app
+from deepcab_platform.cli.train import train_on_vm_cmd
 
 app = typer.Typer(
     name="deepcab-platform",
@@ -24,6 +25,7 @@ app = typer.Typer(
 app.command("bootstrap")(bootstrap_cmd)
 app.command("sync-gh")(sync_gh_cmd)
 app.command("status")(status_cmd)
+app.command("train-on-vm")(train_on_vm_cmd)
 
 # Multi-command sub-apps
 app.add_typer(mlflow_app, name="mlflow")
