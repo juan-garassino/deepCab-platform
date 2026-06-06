@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -26,11 +27,23 @@ class RealGhProvider:
             raise RuntimeError(f"`{self.binary}` not found on PATH")
         result = subprocess.run(
             [self.binary, *args],
-            check=check,
+            check=False,
             capture_output=True,
             text=True,
             input=input_text,
         )
+        if result.returncode != 0:
+            if result.stdout:
+                sys.stdout.write(result.stdout)
+            if result.stderr:
+                sys.stderr.write(result.stderr)
+            if check:
+                raise subprocess.CalledProcessError(
+                    result.returncode,
+                    [self.binary, *args],
+                    output=result.stdout,
+                    stderr=result.stderr,
+                )
         return result.stdout
 
 

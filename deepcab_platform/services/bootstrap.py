@@ -106,37 +106,79 @@ class BootstrapService:
         return bucket
 
     def _ensure_wif(self, project_id: str, project_number: str, gh_owner: str) -> str:
+        # Pool: active → no-op; soft-deleted → undelete; missing → create.
+        self._ensure_wif_pool(project_id)
+        # Provider: same logic, scoped to the pool.
+        self._ensure_wif_provider(project_id, gh_owner)
+        return (
+            f"projects/{project_number}/locations/global/workloadIdentityPools/"
+            f"{self.POOL_ID}/providers/{self.PROVIDER_ID}"
+        )
+
+    def _ensure_wif_pool(self, project_id: str) -> None:
         try:
             self.gcloud.run([
                 "iam", "workload-identity-pools", "describe", self.POOL_ID,
                 "--location=global", f"--project={project_id}",
             ])
+            return  # active
         except Exception:
-            self.gcloud.run([
-                "iam", "workload-identity-pools", "create", self.POOL_ID,
-                "--location=global", "--display-name=GitHub Actions Pool",
-                f"--project={project_id}",
+            pass
+        # Check if soft-deleted (30-day window) — undelete is the right move.
+        try:
+            out = self.gcloud.run([
+                "iam", "workload-identity-pools", "describe", self.POOL_ID,
+                "--location=global", "--show-deleted", f"--project={project_id}",
             ])
+            if "DELETED" in out:
+                self.gcloud.run([
+                    "iam", "workload-identity-pools", "undelete", self.POOL_ID,
+                    "--location=global", f"--project={project_id}", "--quiet",
+                ])
+                return
+        except Exception:
+            pass
+        # Truly absent — create.
+        self.gcloud.run([
+            "iam", "workload-identity-pools", "create", self.POOL_ID,
+            "--location=global", "--display-name=GitHub Actions Pool",
+            f"--project={project_id}",
+        ])
+
+    def _ensure_wif_provider(self, project_id: str, gh_owner: str) -> None:
         try:
             self.gcloud.run([
                 "iam", "workload-identity-pools", "providers", "describe", self.PROVIDER_ID,
                 f"--workload-identity-pool={self.POOL_ID}", "--location=global",
                 f"--project={project_id}",
             ])
+            return
         except Exception:
-            self.gcloud.run([
-                "iam", "workload-identity-pools", "providers", "create-oidc", self.PROVIDER_ID,
+            pass
+        try:
+            out = self.gcloud.run([
+                "iam", "workload-identity-pools", "providers", "describe", self.PROVIDER_ID,
                 f"--workload-identity-pool={self.POOL_ID}", "--location=global",
-                "--display-name=GitHub Actions",
-                "--attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.ref=assertion.ref",
-                f"--attribute-condition=assertion.repository_owner == '{gh_owner}'",
-                "--issuer-uri=https://token.actions.githubusercontent.com",
-                f"--project={project_id}",
+                "--show-deleted", f"--project={project_id}",
             ])
-        return (
-            f"projects/{project_number}/locations/global/workloadIdentityPools/"
-            f"{self.POOL_ID}/providers/{self.PROVIDER_ID}"
-        )
+            if "DELETED" in out:
+                self.gcloud.run([
+                    "iam", "workload-identity-pools", "providers", "undelete", self.PROVIDER_ID,
+                    f"--workload-identity-pool={self.POOL_ID}", "--location=global",
+                    f"--project={project_id}", "--quiet",
+                ])
+                return
+        except Exception:
+            pass
+        self.gcloud.run([
+            "iam", "workload-identity-pools", "providers", "create-oidc", self.PROVIDER_ID,
+            f"--workload-identity-pool={self.POOL_ID}", "--location=global",
+            "--display-name=GitHub Actions",
+            "--attribute-mapping=google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.ref=assertion.ref",
+            f"--attribute-condition=assertion.repository_owner == '{gh_owner}'",
+            "--issuer-uri=https://token.actions.githubusercontent.com",
+            f"--project={project_id}",
+        ])
 
     def _ensure_terraform_sa(
         self, project_id: str, project_number: str, gh_owner: str, gh_platform_repo: str

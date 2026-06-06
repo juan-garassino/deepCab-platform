@@ -18,12 +18,16 @@ admin_password_env_var: KUMA_ADMIN_PASSWORD
 monitors:
   - name: deepcab-api
     type: http
-    url: https://deepcab-api-vkj76snh3q-uc.a.run.app/healthz
+    url: https://deepcab-api-vkj76snh3q-uc.a.run.app/readyz
     interval_seconds: 60
     retry_interval_seconds: 60
     max_retries: 2
     accepted_status_codes: ["200-299"]
-    description: FastAPI inference service. /healthz returns 200 when ready.
+    description: |
+      FastAPI inference service. /readyz returns 200 when the model is loaded
+      and DB connection is good. Note: /healthz is intercepted by Google
+      Frontend on Cloud Run, so we use /readyz externally — the container's
+      internal /healthz is what Cloud Run uses for its own startup probe.
     tags: [api]
 
   - name: deepcab-website

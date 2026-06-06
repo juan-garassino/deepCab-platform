@@ -7,6 +7,7 @@ import typer
 from deepcab_platform.cli.bootstrap import bootstrap_cmd
 from deepcab_platform.cli.kuma import kuma_app
 from deepcab_platform.cli.mlflow import mlflow_app
+from deepcab_platform.cli.secrets import secrets_app
 from deepcab_platform.cli.showcase import showcase_app
 from deepcab_platform.cli.status import status_cmd
 from deepcab_platform.cli.sync_gh import sync_gh_cmd
@@ -29,3 +30,4 @@ app.add_typer(mlflow_app, name="mlflow")
 app.add_typer(showcase_app, name="showcase")
 app.add_typer(kuma_app, name="kuma")
 app.add_typer(tf_app, name="tf")
+app.add_typer(secrets_app, name="secrets")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -30,12 +31,24 @@ class RealTerraformProvider:
         env.setdefault("TF_INPUT", "0")
         result = subprocess.run(
             [self.binary, *args],
-            check=check,
+            check=False,  # we handle the error ourselves so stderr surfaces
             cwd=workdir,
             capture_output=True,
             text=True,
             env=env,
         )
+        if result.returncode != 0:
+            if result.stdout:
+                sys.stdout.write(result.stdout)
+            if result.stderr:
+                sys.stderr.write(result.stderr)
+            if check:
+                raise subprocess.CalledProcessError(
+                    result.returncode,
+                    [self.binary, *args],
+                    output=result.stdout,
+                    stderr=result.stderr,
+                )
         return result.stdout
 
 

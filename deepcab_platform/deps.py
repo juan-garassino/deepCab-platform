@@ -30,6 +30,7 @@ from deepcab_platform.schemas.settings import PlatformSettings, get_settings
 from deepcab_platform.services.bootstrap import BootstrapService
 from deepcab_platform.services.kuma import KumaSeedService
 from deepcab_platform.services.mlflow import MlflowMirrorService
+from deepcab_platform.services.secrets import SecretsService
 from deepcab_platform.services.showcase import ShowcaseService
 from deepcab_platform.services.sync_gh import SyncGhService
 from deepcab_platform.services.terraform import TerraformService
@@ -77,11 +78,18 @@ def get_terraform_service(mode: ProviderMode = ProviderMode.REAL) -> TerraformSe
 
 
 def get_showcase_service(mode: ProviderMode = ProviderMode.REAL) -> ShowcaseService:
-    return ShowcaseService(terraform_service=get_terraform_service(mode))
+    return ShowcaseService(
+        terraform_service=get_terraform_service(mode),
+        gcloud=get_gcloud_provider(mode),
+    )
 
 
 def get_kuma_service(mode: ProviderMode = ProviderMode.REAL) -> KumaSeedService:
     return KumaSeedService(kuma=get_kuma_api_provider(mode))
+
+
+def get_secrets_service(mode: ProviderMode = ProviderMode.REAL) -> SecretsService:
+    return SecretsService(gcloud=get_gcloud_provider(mode))
 
 
 def settings() -> PlatformSettings:
